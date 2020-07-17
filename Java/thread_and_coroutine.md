@@ -27,7 +27,7 @@ Service 和　IntentService（带有单线程的后台一次性 Service，执行
     2. 固定数量线程池 fixedThreadExecutor()
     3. 可以动态增长的线程池 newCachePoolExecutor() 不限制数量
     4. newScheduledThreadPool 支持定时及周期执行任务。
-5. Callable 有返回值的线程
+5. Callable 有返回值的线程，通过 `Future.get()` 获取结果
 
 ## 进程间通信
 
@@ -36,13 +36,32 @@ Service 和　IntentService（带有单线程的后台一次性 Service，执行
 1. 这些方法都必须在同步代码块内使用。因为这些方法都是用于操作线程状态的方法，必须要明确到底要操作的是哪个锁上的线程。
 2. 为什么这些方法内定义在了 Object 类中？ 因为这些方法是监视器方法，监视器可以是任意对象，任意对象都有的方法一定是在 Object 中。
 
-## 线程的四种状态图
+
+## 线程阻塞
+
+该线程放弃 CPU 的使用，暂停执行。只有等到导致阻塞的原因消除之后才能运行。
+
+1. sleep(), wait(), yield(),join(),(suspend(), resume() 已废弃)
+2. 执行一段代码无法获得相关锁。
+3. IO 操作等待相关资源。
+
+有争议的地方，Java 中对阻塞的定义
+
+
+```
+BLOCKED：Thread state for a thread blocked waiting for a monitor lock.
+A thread in the blocked state is waiting for a monitor lock　to enter a synchronized block/method or　reenter a synchronized block/method after calling　｀Object.wait｀
+```
+
+## 线程的状态图
+
+![Thread status transform](images/thread_status_transform.png)
 
 
 
 ## interrupt 和 stop 的区别，为什么 stop 被废弃。
 
-- interrupt 是在线程中设置了一个标志为，需要在 `run` 方法中自己判断标志位来终止。`Thread.isInterrupe()` 会在返回之后，把标志位置为 true，这样方便下次再次执行；而 `isInterrupt()` 不会设置标志位。
+- interrupt 是在线程中设置了一个标志位，需要在 `run` 方法中自己判断标志位来终止。`Thread.isInterrupe()` 会在返回之后，把标志位置为 true，这样方便下次再次执行；而 `isInterrupt()` 不会设置标志位。
 - stop　方法类似将线程　kill 掉，结果不可预期。释放它已经锁定的所有监视器。可能产生数据的不一致性。已经被废弃。
 
 - 正在 `sleep` 的线程，被执行 `interrupt()` 将会终止休眠，同时抛出 `InterruptedException`，此时捕获异常可以做一些善后工作。
@@ -139,10 +158,42 @@ MIN_PRIORITY = 1
     锁的是当前类的字节码。this.getClasss(). 或者 <类名>.class
     t.getClass() 和 Ticket.class 等价
 
+## synchronized 修饰的类型
+
+1. 修饰方法
+2. 修饰代码块
+
+两者等价
+
+```
+public synchronized void method()
+{
+   // todo
+}
+
+public void method()
+{
+   synchronized(this/object) {
+      // todo
+   }
+}
+
+```
+
+3. 修饰静态方法
+4. 修饰类 `synchronized(ClassName.class) {}`
+
+两者是等价的
+
+
+## 不能继承
+
+synchronized关键字不能继承。 
+虽然可以使用synchronized来定义方法，但synchronized并不属于方法定义的一部分，因此，synchronized关键字不能被继承。如果在父类中的某个方法使用了synchronized关键字，而在子类中覆盖了这个方法，在子类中的这个方法默认情况下并不是同步的，而必须显式地在子类的这个方法中加上synchronized关键字才可以。当然，还可以在子类方法中调用父类中相应的方法，这样虽然子类中的方法不是同步的，但子类调用了父类的同步方法，因此，子类的方法也就相当于同步了。
 
 ## Lock 优点
 
-原锁为一个快的封装体，对锁的操作是隐式的，无法进行灵活的操作。到了 v1.5 将锁对象化，将隐式操作显式化，可以灵活地获取释放锁。
+原锁为一个块的封装体，对锁的操作是隐式的，无法进行灵活的操作。到了 v1.5 将锁对象化，将隐式操作显式化，可以灵活地获取释放锁。
 
 ```
 Lock lock = new ReetrantLock(); 可重入的互斥锁。
@@ -179,7 +230,6 @@ volatile 不能保证对象，++,-- 等操作的线程安全。
 
 ## 乐观锁和悲观锁
 
-跟线程无关，主要适用于数据库的。
 
 乐观锁是读数据的时候先不锁数据，假设别人不会修改数据，等到写入的时候再检查是否有修改，有修改再加锁，然后写入。
 
@@ -219,8 +269,70 @@ fun testWrite() {
 ```
 
 
-
-
-
 # 协程
+
+Kotlin 协程由于要和 Java 互操作和运行在 Jvm 之上，其本质上还是对线程的一个封装，底层是靠线程实现的。
+
+## 挂起
+
+挂起是挂起整个携程，挂起点之后的代码不再执行，而是转而执行其他携程。
+
+## 挂起函数
+
+并不是执行到这个函数就挂起了，而是函数内部可能包含有能够使携程挂起的代码，在函数内的代码执行到挂起代码的时候，携程被挂起。被 `suspend` 修饰的函数不应定有挂起代码，也不定会时携程挂起。由于挂起只能出现在携程内部，该修饰符就是为了给编译器标识函数万一有挂起函数，只能用于携程内部，用于安全检查的。
+
+
+## 创建
+
+1. luanch
+2. sync
+3. runBlocking
+
+调度器
+
+1. Dispatchers.Unconfined
+2. Dispatchers.IO 对 IO 操作做了优化
+3. Dispatchers.Default 适用于 CPU 密集型操作
+5. Dispatchers.Main  安卓库独有
+
+
+## volatile 
+
+- 可见性：
+
+　　可见性是一种复杂的属性，因为可见性中的错误总是会违背我们的直觉。通常，我们无法确保执行读操作的线程能适时地看到其他线程写入的值，有时甚至是根本不可能的事情。为了确保多个线程之间对内存写入操作的可见性，必须使用同步机制。
+
+　　可见性，是指线程之间的可见性，一个线程修改的状态对另一个线程是可见的。也就是一个线程修改的结果。另一个线程马上就能看到。比如：用volatile修饰的变量，就会具有可见性。当把变量声明为volatile类型后，编译器与运行时都会注意到这个变量是共享的，因此不会将该变量上的操作与其他内存操作一起重排序。volatile变量不会被缓存在寄存器或者对其他处理器不可见的地方，因此在读取volatile类型的变量时总会返回最新写入的值。，即直接修改内存。所以对其他线程是可见的。但是这里需要注意一个问题，volatile只能让被他修饰内容具有可见性，但不能保证它具有原子性。比如 volatile int a = 0；之后有一个操作 a++；这个变量a具有可见性，但是a++ 依然是一个非原子操作，也就是这个操作同样存在线程安全问题。
+
+volatile变量的内存可见性是基于内存屏障(Memory Barrier)实现的，什么是内存屏障?内存屏障，又称内存栅栏，是一个CPU指令。在程序运行时，为了提高执行性能，编译器和处理器会对指令进行重排序，通过插入特定类型的内存屏障来禁止特定类型的编译器重排序和处理器重排序，插入一条内存屏障会告诉编译器和CPU：不管什么指令都不能和这条Memory Barrier指令重排序。
+
+https://www.jianshu.com/p/08a0a8c984ab
+
+　　在 Java 中 volatile、synchronized 和 final 实现可见性。
+
+- 原子性：
+
+　　原子是世界上的最小单位，具有不可分割性。比如 a=0；（a非long和double类型） 这个操作是不可分割的，那么我们说这个操作时原子操作。再比如：a++； 这个操作实际是a = a + 1；是可分割的，所以他不是一个原子操作。非原子操作都会存在线程安全问题，需要我们使用同步技术（sychronized）来让它变成一个原子操作。一个操作是原子操作，那么我们称它具有原子性。java的concurrent包下提供了一些原子类，我们可以通过阅读API来了解这些原子类的用法。比如：AtomicInteger、AtomicLong、AtomicReference等。
+
+　　在 Java 中 synchronized 和在 lock、unlock 中操作保证原子性。
+
+- 有序性：
+
+　　Java 语言提供了 volatile 和 synchronized 两个关键字来保证线程之间操作的有序性，volatile 是因为其本身包含“禁止指令重排序”的语义，synchronized 是由“一个变量在同一个时刻只允许一条线程对其进行 lock 操作”这条规则获得的，此规则决定了持有同一个对象锁的两个同步块只能串行执行。
+
+
+> 当一个变量定义为 volatile 之后，将具备两种特性：
+
+　　1.保证此变量对所有的线程的可见性，这里的“可见性”，当一个线程修改了这个变量的值，volatile 保证了新值能立即同步到主内存，以及每次使用前立即从主内存刷新。但普通变量做不到这点，普通变量的值在线程间传递均需要通过主内存（详见：Java内存模型）来完成。
+
+　　2.禁止指令重排序优化。有volatile修饰的变量，赋值后多执行了一个“load addl $0x0, (%esp)”操作，这个操作相当于一个内存屏障（指令重排序时不能把后面的指令重排序到内存屏障之前的位置），只有一个CPU访问内存时，并不需要内存屏障；（什么是指令重排序：是指CPU采用了允许将多条指令不按程序规定的顺序分开发送给各相应电路单元处理）。
+
+volatile 性能：
+　　volatile 的读性能消耗与普通变量几乎相同，但是写操作稍慢，因为它需要在本地代码中插入许多内存屏障指令来保证处理器不发生乱序执行。
+
+
+## Atomic 类
+
+https://www.jianshu.com/p/84c75074fa03
+
 
