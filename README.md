@@ -24,6 +24,7 @@
     - Framwork
     - [JNI](Android/jni/jni.md)
         - [Change](Android/jni/change_log.md)
+        - [NDK](Android/jni/ndk.md)
 
 
 - Performance
