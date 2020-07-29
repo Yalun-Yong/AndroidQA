@@ -19,11 +19,16 @@ C/C++ 源码 --(ndk编译) ------┐
 Android Studio 提供了多种方式编译 C/C++ 代码的方式。
 
 - `CMake` 是 Andriod Studio 的默认方式，对于支持 CMake 的库和新建库，尽量以 CMake 的方式编译。
+
 - `ndk-build` 适用于已经使用 make 的软件库。可以使用这种方式编译。
+
 - 辅助工具，例如 `CCache`很少使用，根据特殊需要可以使用。
 
-使用 NDK 开发，你甚至可以完全使用 Native 开发应用（完全不使用 Java 和 Kotlin），但是你需要慎重的考虑为什么这样做，毕竟安卓提供的组件很方便的实现 UI 的操作和控制。跟多的是需要考虑的哪些部分使用 Native 开发，哪些使用 Java 开发。
+- [使用其它构建系统构建已有的代码库，通常用于不是安卓特有的三方库，例如 OpenGL 和 libbzip2](build_third_library.md)。
 
+
+
+使用 NDK 开发，你甚至可以完全使用 Native 开发应用（完全不使用 Java 和 Kotlin），但是你需要慎重的考虑为什么这样做，毕竟安卓提供的组件很方便的实现 UI 的操作和控制。跟多的是需要考虑的哪些部分使用 Native 开发，哪些使用 Java 开发。
 
 
 ## Flow
@@ -79,3 +84,6 @@ JNI 定义了两个关键的数据结构 `JavaVM` 和 `JNIEnv`，它们本质上
 `JNIEnv` 用于 `thread-local` 存储，因此它无法在线程间共享。如果在一段代码中没有其他方法获取 `JNIEnv` 时，可以共享 `JavaVM`，并通过它的 `getEnv` 获取。
 
 C 中的 `JNIEnv` 和 `JavaVM` 声明与 C++ 中的不同。根据被导入到 C++ 中还是 C 中 `jni.h` 提供不同的类型。因此，在两种语言都包含的头文件中导入 `JNIEnv` 参数是错误的做法（换句话说，如果你的头文件需要 `#ifdef __cplusplus`, 并且在头文件中引用了 `JNIEnv` 你需要做一些额外工作）。
+
+
+##
