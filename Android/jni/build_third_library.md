@@ -2,7 +2,7 @@
 
 从 NDK 18 开始，NDK 移除了 gcc 编译器，只能使用 Clang 编译器编译。Clang 编译器有更好的错误提示和语法检查。
 
-从 NDK 19 开始，NDK 中默认带有 `toolchains` 可供使用，与任意构建系统进行交互时不再需要使用 make_standalone_toolchain.py 脚本。
+从 NDK 19 开始，NDK 中默认带有 `toolchains` 可供使用，与任意构建系统进行交互时不再需要使用 make_standalone_toolchain.py 脚本。如果是 NDK 19 之前的版本，请查看 [NDK 18 及之前编译](https://developer.android.com/ndk/guides/standalone_toolchain)。
 
 想要为自己的构建系统添加原生NDK支持的构建系统维护人员应该阅读[《构建系统维护人员指南》](https://android.googlesource.com/platform/ndk/+/master/docs/BuildSystemMaintainers.md)。
 
@@ -42,9 +42,21 @@ $ $NDK/toolchains/llvm/prebuilt/$HOST_TAG/aarch64-linux-android21-clang++ \
 许多构建脚本都仅接受 GCC 格式的交叉编译，每个编译器仅针对一个 `OS/架构` 组合，因此可能不能正确的处理 `-target`，因此更好的做法是使用目标前缀的 Clang 编译器。
 
 
+- --arch 参数是必填项，但 API 级别将默认设为指定架构支持的最低级别（目前，级别 16 适用于 32 位架构，级别 21 适用于 64 位架构）。
+
+- 自 r18 开始，所有独立工具链都使用 Clang 和 libc++。除非构建静态可执行文件，否则将默认使用 libc++ 共享库。如需强制使用静态库，请在链接时传递 -static-libstdc++。此行为与普通主机工具链的行为相符。
+
+- 如 C++ 库支持中所提到的那样，在链接到 libc ++ 时通常需要传递 -latomic。
+
+
 ## Autoconf
 
 ***注意：通常无法在 Windows 上构建 Autoconf 项目。Windows 用户可以使用适用于 Linux 的 Windows 子系统或 Linux 虚拟机来构建这些项目。***
 
 Autoconf 使用项目目录下的 `configure` 配置编译参数。Autoconf 允许指定不同的参数来配置编译过程和裁剪编译目标，而且它允许使用环境变量指定 `toolchain`。
 
+# NDK 18 及之前编译
+
+`make_standalone_toolchain.py` 用于替换之前的 `make-standalone-toolchain.sh` 用于在 windows 不用配置 bash 环境也能编译，但是实际情况是许多使用 `Autoconf` 配置编译的三方库仍旧无法在 Windows 上编译。
+
+`make-standalone-toolchain.py` 不再接收 `--abis` 参数，因为 `NDK 17` 开始就不再支持 `armabi` 了， 通过 `archs` 即可区分。而为了让老版本的写的编译脚本在版本 NDK 也能运行，`make-standalone-toolchain.sh` 最终也是调用 `make_standalone_toolchain.py` 来处理。虽然接收  `--abis` 参数，但却什么也没做，应该是为了兼容老版本的脚本运行。
