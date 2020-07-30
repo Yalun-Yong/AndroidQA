@@ -59,4 +59,30 @@ Autoconf 使用项目目录下的 `configure` 配置编译参数。Autoconf 允�
 
 `make_standalone_toolchain.py` 用于替换之前的 `make-standalone-toolchain.sh` 用于在 windows 不用配置 bash 环境也能编译，但是实际情况是许多使用 `Autoconf` 配置编译的三方库仍旧无法在 Windows 上编译。
 
-`make-standalone-toolchain.py` 不再接收 `--abis` 参数，因为 `NDK 17` 开始就不再支持 `armabi` 了， 通过 `archs` 即可区分。而为了让老版本的写的编译脚本在版本 NDK 也能运行，`make-standalone-toolchain.sh` 最终也是调用 `make_standalone_toolchain.py` 来处理。虽然接收  `--abis` 参数，但却什么也没做，应该是为了兼容老版本的脚本运行。
+`make_standalone_toolchain.py` 不再接收 `--abis` 参数，因为 `NDK 17` 开始就不再支持 `armabi` 了， 通过 `archs` 即可区分。而为了让老版本的写的编译脚本在版本 NDK 也能运行，`make-standalone-toolchain.sh` 最终也是调用 `make_standalone_toolchain.py` 来处理。虽然接收  `--abis` 参数，但却什么也没做，应该是为了兼容老版本的脚本运行。
+
+高版本的 NDK（应该是 19 开始） 虽然 `make_standalone_toolchain.py` 仍在，由于 NDK 自带的 toolchain 已可用，基本都是拷贝 `$NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64/` 目录下的内容。 `sysroot` 也使用的是这个目录下的。 `$NDK_HOME` 目录下也有个 `sysroot`, 估计也是用来兼容老的编译脚本，冗余的。
+
+
+从使用 `make_standalone_toolchain.py` 的警告信息中可以分析出两个目录基本一致。
+
+```
+$NDK/build/tools/make_standalone_toolchain.py \
+    --arch arm --api 16 --install-dir /tmp/my-android-toolchain
+```
+
+`--install-dir` 将直接生成在指定目录，如果使用该参数，将生成一个压缩包，并且可以使用 `--package-dir` 指定压缩包的位置，方便解压到任意目录。
+
+```
+WARNING:__main__:make_standalone_toolchain.py is no longer necessary. The
+$NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin directory contains target-specific scripts that perform
+the same task. For example, instead of:
+
+    $ python $NDK/build/tools/make_standalone_toolchain.py \
+        --arch arm --api 16 --install-dir toolchain
+    $ toolchain/bin/clang++ src.cpp
+
+Instead use:
+
+    $ $NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin/armv7a-linux-androideabi16-clang++ src.cpp
+```
