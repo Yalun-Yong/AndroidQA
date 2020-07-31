@@ -30,6 +30,32 @@ Android Studio 提供了多种方式编译 C/C++ 代码的方式。
 
 使用 NDK 开发，你甚至可以完全使用 Native 开发应用（完全不使用 Java 和 Kotlin），但是你需要慎重的考虑为什么这样做，毕竟安卓提供的组件很方便的实现 UI 的操作和控制。跟多的是需要考虑的哪些部分使用 Native 开发，哪些使用 Java 开发。
 
+### CPU 架构和 ABI
+
+原生代码直接运行在物理机上，因编译过程中就要生成对应 CPU 架构的二进制指令。本部分介绍了在构建时如何面向特定的架构和 CPU，如何使用 ARM NEON 扩展指令集，以及在运行时如何使用 cpufeatures 库查询可选功能。
+
+不同的 CPU 支持不同的指令集， CPU和指令集的每种组合都有其自己的应用 ABI（ Application Binary Interface ）。ABI包含以下信息：
+
+- 可以使用的CPU指令集(和扩展)。
+- 运行时内存存储和加载的字节顺序。Android 始终是 little-endian（小字端）。
+- 在应用和系统之间传递数据的规范（包括对齐限制），以及系统调用函数时如何使用堆栈和寄存器。
+- 可执行二进制文件（例如程序和共享库）的格式，以及它们支持的内容类型。Android 始终使用 ELF。如需了解详情，请参阅 ELF System V 应用二进制接口。
+- 如何重整 C++ 名称。如需了解详情，请参阅 Generic/Itanium C++ ABI。
+
+ABI 还可以指 CPU 平台支持的原生 API。
+
+NDK 支持的 ABI 有 
+
+- armeabi-v7a (armabi 从 NDK17 已不再支持，主要因为从 Android 4.0 开始就不再支持 armabi 处理器，已经没有这方面的设备了。)
+- arm64-v8a
+- x86
+- x86-64
+
+
+
+
+
+
 
 ## Flow
 
