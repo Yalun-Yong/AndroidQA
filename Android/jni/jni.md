@@ -176,6 +176,9 @@ java -Djava.library.path=. test.TestJni
 
 
 
+Android 项目木中的目录：
 
+- jni 目录是用于存放源码的目录
+- jniLibs 是用于存放编译好的 so 文件的目录。
 
 

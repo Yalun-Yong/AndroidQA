@@ -10,13 +10,11 @@
 要针对不同的 CPU 架构进行编译，要么使用 Clang 时使用 `-targe` 传入对应的目标架构，要么使用对应目标前缀的 Clang 编译文件，例如编译 `minSdkVersion` 21 的 ARM 64 位安卓目标，可以使用以下任意合适的一种。
 
 ```shell
-$ $NDK/toolchains/llvm/prebuilt/$HOST_TAG/clang++ \
-    -target aarch64-linux-android21 foo.cpp
+$ $NDK/toolchains/llvm/prebuilt/$HOST_TAG/bin/clang++  -target aarch64-linux-android21 foo.cpp
 ```
 
-```
-$ $NDK/toolchains/llvm/prebuilt/$HOST_TAG/aarch64-linux-android21-clang++ \
-    foo.cpp
+```shell
+$ $NDK/toolchains/llvm/prebuilt/$HOST_TAG/bin/aarch64-linux-android21-clang++ foo.cpp
 ```
 
 `$NDK` 替换为为安装 `NDK` 环境的路径。`$HOST_TAG` 替换为根据下表你下载的 NDK 平台而对应的不同路径：
