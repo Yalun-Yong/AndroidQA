@@ -25,6 +25,8 @@
     - [JNI](Android/jni/jni.md)
         - [Change](Android/jni/change_log.md)
         - [NDK](Android/jni/ndk.md)
+        - [JNI](Android/jni/jni.md)
+        - [生成 Native 函数声明](Android/jni/generate_function_decleration.md)
 
 
 - Performance
