@@ -23,7 +23,7 @@ $ $NDK/toolchains/llvm/prebuilt/$HOST_TAG/bin/aarch64-linux-android21-clang++ fo
 | ---- | ---- |
 | macOS	| darwin-x86_64 |
 | Linux	| linux-x86_64 |
-| 32-bit | Windows	windows |
+| 32-bit Windows |	windows |
 | 64-bit Windows | windows-x86_64 |
 
 这里的前缀或目标参数的格式是目标三元组，带有表示 minSdkVersion 的后缀。该后缀仅与 clang/clang++ 一起使用；binutils 工具（例如 ar 和 strip）不需要后缀，因为它们不受 minSdkVersion 影响。Android 支持的目标三元组如下：
