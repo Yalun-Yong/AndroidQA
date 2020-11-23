@@ -8,6 +8,7 @@
 
 - 性能
     - [System Tracing](Android/performance/system_tracing/tracing.md)
+    - [Launch Time](Android/performance/lanch_time.md)
     
 
 - language
