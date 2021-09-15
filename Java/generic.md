@@ -18,6 +18,10 @@ class Apple extends Fruit {}
 class Banana extends Fruit {}
 
 ArrayList<? extends Fruit> fruitList = new ArrayList<Fruit>();
+
+// 多层时
+ArrayList<? extends List<? extends Fruit>> fruitList = new ArrayList<List<Apple>>();
+
 ```
 
 付出的代价是所有的参数带该泛型的，都不能调用了。因为泛型擦除的原因，在运行的时候不确定要传入的具体类型。只能禁止传入参数。但是能够调用返回类型是 `Fruit` 的方法。
@@ -29,7 +33,7 @@ ArrayList<? extends Fruit> fruitList = new ArrayList<Fruit>();
 Type parameter: 形参
 Type arguments: 实参
 
-- 声明的地方是形参，其他都是实参。 例如 ｀class A<T> extends B<T>｀， `T` 对于 A 来说是形参，而对于 B 来说是实参。因为在确定了调用 B 时传入的类型。 
+- 声明的地方是形参，其他都是实参。 例如 ｀class A<T> extends B<T>｀， `T` 对于 A 来说是形参，而对于 B 来说是实参。因为在确定了调用 B 时传入的类型。
 
 `？`  仅能做参。仅能用在变量的声明部分。
 
@@ -45,7 +49,7 @@ in 和 out 是 kotlin 中的修饰符，它们等于
 所谓类型擦除，就是泛型的类实例化的时候并没有实例化的泛型信息。而是只保存了定义的的类的信息。例如
 
 ```Java
-List<String> 
+List<String>
 List<Integer>
 ```
 在编译后，都是 `List` 类的，一样的。
@@ -68,10 +72,3 @@ TypeToken<List<String>> = new TypeToken<List<String>>() {}
 ```
 
 此时，由于声明了子类，TypeToken 保存的上限信息就是 `List` 和 `String`,而不再是 `Object` 了，这样就能正确的通过反射实例化类。
-
-
-
-
-
-
-
