@@ -41,7 +41,7 @@ Android Studio 提供了多种方式编译 C/C++ 代码的方式。
 
 
 
-使用 NDK 开发，你甚至可以完全使用 Native 开发应用（完全不使用 Java 和 Kotlin），但是你需要慎重的考虑为什么这样做，毕竟安卓提供的组件很方便的实现 UI 的操作和控制。跟多的是需要考虑的哪些部分使用 Native 开发，哪些使用 Java 开发。
+使用 NDK 开发，你甚至可以完全使用 Native 开发应用（完全不使用 Java 和 Kotlin），但是你需要慎重的考虑为什么这样做，毕竟安卓提供的组件很方便的实现 UI 的操作和控制。跟多的是需要考虑的哪些部分使用 Native 开发，哪些使用 Java 开发。
 
 ### CPU 架构和 ABI
 
@@ -57,7 +57,7 @@ Android Studio 提供了多种方式编译 C/C++ 代码的方式。
 
 ABI 还可以指 CPU 平台支持的原生 API。
 
-NDK 支持的 ABI 有 
+NDK 支持的 ABI 有
 
 - armeabi-v7a (armabi 从 NDK17 已不再支持，主要因为从 Android 4.0 开始就不再支持 armabi 处理器，已经没有这方面的设备了。)
 - arm64-v8a
