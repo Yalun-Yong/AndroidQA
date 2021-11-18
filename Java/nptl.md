@@ -1,5 +1,13 @@
 # NPTL 锁实现（glibc-2.34版本）
 
+Futex 是fast userspace mutex的缩写，意思是快速用户空间互斥体。Linux内核把它们作为快速的用户空间的锁和信号量的预制构件提供给开发者。Futex非常基础，借助其自身的优异性能，构建更高级别的锁的抽象，如POSIX互斥体。大多数程序员并不需要直接使用Futex，它一般用来实现像NPTL这样的系统库。
+
+Futex 由一块能够被多个进程共享的内存空间(一个对齐后的整型变量)组成；这个整型变量的值能够通过汇编语言调用CPU提供的原子操作指令来增加或减少，并且一个进程可以等待直到那个值变成正数。Futex 的操作几乎全部在应用程序空间完成；只有当操作结果不一致从而需要仲裁时，才需要进入操作系统内核空间执行。这种机制允许使用 futex 的锁定原语有非常高的执行效率：由于绝大多数的操作并不需要在多个进程之间进行仲裁，所以绝大多数操作都可以在应用程序空间执行，而不需要使用(相对高代价的)内核系统调用。
+
+futex保存在用户空间的共享内存中，并且通过原子操作进行操作。在大部分情况下，资源不存在争用的情况下，进程或者线程可以立刻获得资源成功，实际上就没有必要调用系统调用，陷入内核了。实际上，futex的作用就在于减少系统调用的次数，来提高系统的性能。
+
+
+
 ## 1. 锁类型
 
 ```C
@@ -60,7 +68,7 @@ lll_mutex_lock_optimized (pthread_mutex_t *mutex)
      even without any threads.  If the lock is already marked as
      acquired, POSIX requires that pthread_mutex_lock deadlocks for
      normal mutexes, so skip the optimization in that case as
-     well.  */
+     well. */
   // 线程仅在当前进程使用。
   int private = PTHREAD_MUTEX_PSHARED (mutex);
   if (private == LLL_PRIVATE && SINGLE_THREAD_P && mutex->__data.__lock == 0)
@@ -105,7 +113,7 @@ _builtin_expect(exp, c)接受两个long型的参数，用来告诉gcc：exp==c�
 ## 3. lll_lock
 
 ```c
-// sysdeps/nptl/lovellock.c
+// glibc-2.34/sysdeps/nptl/lowlevellock.h
 
 /* This is an expression rather than a statement even though its value is
    void, so that it can be used in a comma expression or as an expression
@@ -213,8 +221,37 @@ ARM 的调用流程比较长，最后还是调用了 [`__atomic_compare_exchange
 
 For x86
 ```
-
+// cas_x86.c
+int test_cas() {
+    int x = 1;
+    return __sync_bool_compare_and_swap(&x, 1, 0);
+}
 ```
+编译指令，`-S` 参数表示仅执行到汇编，而不生成可执行程序。`-masm=intel` 表示生成 Intel 格式的汇编，如果对 gas 汇编比较熟悉，可以去掉该参数。
+```bash
+clang -masm=intel -S cas_x86.c -o cas_x86.s
+```
+
+```ARM
+_test_cas:                              ## @test_cas
+	.cfi_startproc
+## %bb.0:
+	push	rbp
+	.cfi_def_cfa_offset 16
+	.cfi_offset rbp, -16
+	mov	rbp, rsp
+	.cfi_def_cfa_register rbp
+	mov	dword ptr [rbp - 4], 1
+	xor	edx, edx
+	xor	ecx, ecx
+	mov	eax, 1
+	lock		cmpxchg	dword ptr [rbp - 4], edx  ## 执行 CAS 原子操作。
+	sete	cl
+	mov	eax, ecx
+	pop	rbp
+	ret
+```
+
 
 For Arm
 ```c
@@ -228,7 +265,7 @@ void test_cas() {
 }
 ```
 
-[ARMv8.1 使用 CASA 原子操作](https://developer.arm.com/documentation/dui0801/g/A64-Data-Transfer-Instructions/CASA--CASAL--CAS--CASL--CASAL--CAS--CASL)
+[ARMv8.1 使用 CASA 原子操作](https://developer.arm.com/documentation/dui0801/g/A64-Data-Transfer-Instructions/CASA--CASAL--CAS--CASL--CASAL--CAS--CASL)。 编译验证。
 
 ```bash
 $NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang \
@@ -305,7 +342,11 @@ stxr 将 Rt (source register)中的内容加载到该 [Rn] 的内存中。Rd 保
 
 通过硬件的支持，保证对内存变量的原子操作。这些操作仍然是一个复杂的流程，为了简化，将这些操作可以简化为一个 CAS 函数。
 
-```
+```c
+/**
+ * val 和 old_value 相同，将 val 更新为 new_value 返回 true.
+ * val 和 old_value 不相同，返回 false
+ */
 bool CAS(T* val, T new_value, T old_value) {
   if (*val == old_value) {
     *val = new_value;
@@ -315,6 +356,229 @@ bool CAS(T* val, T new_value, T old_value) {
   }
 }
 ```
+
+### 获取不到锁，调用 __lll_lock_wait 休眠
+
+```C
+// glibc-2.34/nptl/lowlevellock.c
+void
+__lll_lock_wait (int *futex, int private)
+{
+  if (atomic_load_relaxed (futex) == 2)
+    goto futex;
+
+  // 在获取锁失败后，会将互斥量设置为2，然后进行系统调用进行挂起，这是为了让解锁线程发现有其它等待互斥量的线程需要被唤醒
+  while (atomic_exchange_acquire (futex, 2) != 0)
+    {
+    futex:
+      LIBC_PROBE (lll_lock_wait, 1, futex);
+      futex_wait ((unsigned int *) futex, 2, private); /* Wait if *futex == 2.  */
+    }
+}
+
+#  define atomic_load_relaxed(mem) \
+   ({ __typeof ((__typeof (*(mem))) *(mem)) __atg100_val;		      \
+   __asm ("" : "=r" (__atg100_val) : "0" (*(mem)));			      \
+   __atg100_val; })
+
+// glibc-2.34/sysdeps/nptl/futex-internal.h
+
+/* Atomically wrt other futex operations on the same futex, this blocks iff
+   the value *FUTEX_WORD matches the expected value.  This is
+   semantically equivalent to:
+     l = <get lock associated with futex> (FUTEX_WORD);
+     wait_flag = <get wait_flag associated with futex> (FUTEX_WORD);
+     lock (l);
+     val = atomic_load_relaxed (FUTEX_WORD);
+     if (val != expected) { unlock (l); return EAGAIN; }
+     atomic_store_relaxed (wait_flag, true);
+     unlock (l);
+     // Now block; can time out in futex_time_wait (see below)
+     while (atomic_load_relaxed(wait_flag) && !<spurious wake-up>);
+
+   Note that no guarantee of a happens-before relation between a woken
+   futex_wait and a futex_wake is documented; however, this does not matter
+   in practice because we have to consider spurious wake-ups (see below),
+   and thus would not be able to reliably reason about which futex_wake woke
+   us.
+
+   Returns 0 if woken by a futex operation or spuriously.  (Note that due to
+   the POSIX requirements mentioned above, we need to conservatively assume
+   that unrelated futex_wake operations could wake this futex; it is easiest
+   to just be prepared for spurious wake-ups.)
+   Returns EAGAIN if the futex word did not match the expected value.
+   Returns EINTR if waiting was interrupted by a signal.
+
+   Note that some previous code in glibc assumed the underlying futex
+   operation (e.g., syscall) to start with or include the equivalent of a
+   seq_cst fence; this allows one to avoid an explicit seq_cst fence before
+   a futex_wait call when synchronizing similar to Dekker synchronization.
+   However, we make no such guarantee here.  */
+static __always_inline int
+futex_wait (unsigned int *futex_word, unsigned int expected, int private)
+{
+  int err = lll_futex_timed_wait (futex_word, expected, NULL, private);
+  switch (err)
+    {
+    case 0:
+    case -EAGAIN:
+    case -EINTR:
+      return -err;
+
+    case -ETIMEDOUT: /* Cannot have happened as we provided no timeout.  */
+    case -EFAULT: /* Must have been caused by a glibc or application bug.  */
+    case -EINVAL: /* Either due to wrong alignment or due to the timeout not
+		     being normalized.  Must have been caused by a glibc or
+		     application bug.  */
+    case -ENOSYS: /* Must have been caused by a glibc bug.  */
+    /* No other errors are documented at this time.  */
+    default:
+      futex_fatal_error ();
+    }
+}
+
+
+
+// glibc-2.34/sysdeps/nptl/lowlevellock-futex.h
+
+# define lll_futex_timed_wait(futexp, val, timeout, private)     \
+  lll_futex_syscall (4, futexp,                                 \
+		     __lll_private_flag (FUTEX_WAIT, private),  \
+		     val, timeout)
+
+// glibc-2.34/sysdeps/nptl/lowlevellock-futex.h
+# define lll_futex_syscall(nargs, futexp, op, ...)                      \
+  ({                                                                    \
+    long int __ret = INTERNAL_SYSCALL (futex, nargs, futexp, op, 	\
+				       __VA_ARGS__);                    \
+    (__glibc_unlikely (INTERNAL_SYSCALL_ERROR_P (__ret))         	\
+     ? -INTERNAL_SYSCALL_ERRNO (__ret) : 0);                     	\
+  })
+
+```
+
+### 系统调用 INTERNAL_SYSCALL
+
+以 ARM 64 位为例
+
+```C
+// glibc-2.34/sysdeps/unix/sysv/linux/aarch64/sysdep.h
+# define INTERNAL_SYSCALL(name, nr, args...)			\
+	INTERNAL_SYSCALL_RAW(SYS_ify(name), nr, args)
+```
+
+SYS_ify是个宏，用于将syscall name转换为syscall number。不同平台的syscall number是不同的，即使arm和arm64也不相同
+
+```C
+// glibc-2.34/sysdeps/unix/sysv/linux/aarch64/sysdep.h
+/* For Linux we can use the system call table in the header file
+	/usr/include/asm/unistd.h
+   of the kernel.  But these symbols do not follow the SYS_* syntax
+   so we have to redefine the `SYS_ify' macro here.  */
+#undef SYS_ify
+#define SYS_ify(syscall_name)	(__NR_##syscall_name)
+
+// glibc-2.34/sysdeps/unix/sysv/linux/aarch64/arch-syscall.h
+#define __NR_futex 98
+
+```
+这里将 `futex` 转化为 `__NR_futex`。再看 `INTERNAL_SYSCALL_RAW` 的实现：
+
+```C
+// glibc-2.34/sysdeps/unix/sysv/linux/aarch64/sysdep.h
+# define INTERNAL_SYSCALL_RAW(name, nr, args...)		\
+  ({ long _sys_result;						\
+     {								\
+       LOAD_ARGS_##nr (args)					\
+       register long _x8 asm ("x8") = (name);			\
+       asm volatile ("svc	0	// syscall " # name     \
+		     : "=r" (_x0) : "r"(_x8) ASM_ARGS_##nr : "memory");	\
+       _sys_result = _x0;					\
+     }								\
+     _sys_result; })
+```
+
+- nr 为 NumberArgument 参数个数，这里为 4。 LOAD_ARGS_##nr 为 LOAD_ARGS_4，这个宏用于将所有的参数转换为64bit， 因为 futex 是 int 并将相应的参数保存到 _x0/_x1/_x2/_x3/ 中。
+
+```C
+// glibc-2.34/sysdeps/unix/sysv/linux/aarch64/sysdep.h
+# define LOAD_ARGS_0()				\
+  register long _x0 asm ("x0");
+# define LOAD_ARGS_1(x0)			\
+  long _x0tmp = (long) (x0);			\
+  LOAD_ARGS_0 ()				\
+  _x0 = _x0tmp;
+# define LOAD_ARGS_2(x0, x1)			\
+  long _x1tmp = (long) (x1);			\
+  LOAD_ARGS_1 (x0)				\
+  register long _x1 asm ("x1") = _x1tmp;
+# define LOAD_ARGS_3(x0, x1, x2)		\
+  long _x2tmp = (long) (x2);			\
+  LOAD_ARGS_2 (x0, x1)				\
+  register long _x2 asm ("x2") = _x2tmp;
+# define LOAD_ARGS_4(x0, x1, x2, x3)		\
+  long _x3tmp = (long) (x3);			\
+  LOAD_ARGS_3 (x0, x1, x2)			\
+  register long _x3 asm ("x3") = _x3tmp;
+```
+ASM_ARGS_##nr 对应ASM_ARGS_4, 用于将x0~x3这4个寄存器作为内联汇编的输入寄存器列表
+
+```C
+// glibc-2.34/sysdeps/unix/sysv/linux/aarch64/sysdep.h
+# define ASM_ARGS_0
+# define ASM_ARGS_1	, "r" (_x0)
+# define ASM_ARGS_2	ASM_ARGS_1, "r" (_x1)
+# define ASM_ARGS_3	ASM_ARGS_2, "r" (_x2)
+# define ASM_ARGS_4	ASM_ARGS_3, "r" (_x3)
+```
+
+简化 `futex_wait` 之后
+
+```C
+static __always_inline int futex_wait(unsigned int *futex_word, unsigned int expected, int private) {
+  long _sys_result;
+  long _x3tmp = (long)(NULL);
+  long _x2tmp = (long)(expected);
+  long _x1tmp = (long)((((0) | 128) ^ (private)));
+  long _x0tmp = (long)(futex_word);
+  register long _x0 asm("x0") = _x0tmp;
+  register long _x1 asm("x1") = _x1tmp;
+  register long _x2 asm("x2") = _x2tmp;
+  register long _x3 asm("x3") = _x3tmp;
+  register long _x8 asm("x8") = ((98));
+  asm volatile(
+      "svc	0	// syscall "
+      "SYS_ify(futex)"
+      : "=r"(_x0)
+      : "r"(_x8), "r"(_x0), "r"(_x1), "r"(_x2), "r"(_x3)
+      : "memory");
+  long __ret = _x0;
+  int err = __builtin_expect((((unsigned long int)(__ret) > -4096UL)), 0) ? -(-(__ret)) : 0;
+  switch (err) {
+    case 0:
+    case -EAGAIN:
+    case -EINTR:
+      return -err;
+
+    case -ETIMEDOUT: /* Cannot have happened as we provided no timeout.  */
+    case -EFAULT:    /* Must have been caused by a glibc or application bug.  */
+    case -EINVAL:    /* Either due to wrong alignment or due to the timeout not
+                        being normalized.  Must have been caused by a glibc or
+                        application bug.  */
+    case -ENOSYS:    /* Must have been caused by a glibc bug.  */
+    /* No other errors are documented at this time.  */
+    default:
+      futex_fatal_error();
+  }
+}
+```
+`"svc	0	// syscall " "SYS_ify(futex)"` 会被编译为 `svc	0	// syscall SYS_ify(futex)` 指令， `// syscall SYS_ify(futex)` 是注释，没任何影响。
+
+- syscall number存储到了x8寄存器
+- 最后svc 0 触发进入内核态
+
+
+## TODO 内核调用流程
 
 
 
@@ -352,3 +616,25 @@ cat /proc/cpuinfo
 内核互斥锁，内核锁是 Linux 内核实现的锁，和 NPTL 锁实现不一样。
 
 https://blog.csdn.net/arm7star/article/details/77108301
+
+
+
+## 分析对错
+
+
+互斥锁使用注意事项临界资源保护的使用场景，不要乱用，锁的使用是会消耗资源的(获取锁，如果获取不到会线程切换，切换需要将工作环境入栈，这就造成cpu的浪费。而且回到当前线程运行可能已经不止10ms了)
+
+获取锁之后不要sleep太久
+
+不要交叉使用两把锁，然后死锁
+
+锁不要保护的太大，够用就行
+
+业务需求是否能接受线程的切换所造成的实时性的损失(默认10ms)
+
+
+
+2. spinlock的lock操作则是一个死循环，不断尝试trylock，直到成功。 对于一些很小的临界区，使用spinlock是很高效的。因为trylock失败时，可以预期持有锁的线程（进程）会很快退出临界区（释放锁）。所以死循环的忙等待很可能要比进程挂起等待更高效。
+
+
+但是spinlock的应用场景有限，对于大的临界区，忙等待则是件很恐怖的事情，特别是当同步机制运用于等待某一事件时（比如服务器工作线程等待客户端发起请求）。所以很多情况下进程挂起等待是很有必要的。
