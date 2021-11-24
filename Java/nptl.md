@@ -29,6 +29,48 @@ enum
 };
 ```
 
+数据结构，简化后的版本
+
+```C
+// 64
+struct __pthread_mutex_s {
+  int __lock __LOCK_ALIGNMENT;
+  unsigned int __count;
+  int __owner;
+  unsigned int __nusers;
+  int __kind;
+  int __spins;
+  __pthread_list_t __list;
+  # define __PTHREAD_MUTEX_HAVE_PREV      1
+}
+
+// 32 位
+struct __pthread_mutex_s
+{
+  int __lock __LOCK_ALIGNMENT;
+  unsigned int __count;
+  int __owner;
+  int __kind;
+  unsigned int __nusers;
+  __extension__ union
+  {
+    int __spins;
+    __pthread_slist_t __list;
+  };
+  # define __PTHREAD_MUTEX_HAVE_PREV      0
+};
+```
+
+// 为了理解方便，对定义原型有较大改动，在定义中有四个比较重要的成员，以下对其分别进行介绍：
+
+lock表示当前mutex的状态，0表示初始化没有被持有的状态，此时可以对mutex执行lock操作，lock为1时表示当前mutex已经被持有，并且没有其他线程在等待它的释放，当lock > 1时，表示mutex被某个线程持有并且有另外的线程在等待它的释放。
+
+count表示当前被持有的次数，一般来说对不可重入的锁，这个值只可能是0和1，对于可重入的锁，比如递归锁，这个值会大于1。
+
+owner用来记录持有当前mutex的线程id，如果没有线程持有，这个值为0。
+
+nusers用来记录当前有多少线程持有该互斥体，一般来说，这个值只能是0和1，但是对于读写锁来说，多个读线程是可以共同持有mutex的，因此用nusers来记录线程的数量。
+
 根据锁的类型，代码比较多，仅看普通的互斥锁  `PTHREAD_MUTEX_TIMED_NP`。具体的代码在 `nptl/pthread_mutex_lock.c`
 
 ## 2. 互斥锁
@@ -357,6 +399,17 @@ bool CAS(T* val, T new_value, T old_value) {
 }
 ```
 
+### TAS
+
+```C
+// TestAndSet
+int TAS(int *ptr, int new) {
+  int old = *ptr; // fetch old value at ptr
+  *ptr = new; // store ’new’ into ptr
+  return old; // return the old value
+}
+```
+
 ### 获取不到锁，调用 __lll_lock_wait 休眠
 
 ```C
@@ -577,10 +630,210 @@ static __always_inline int futex_wait(unsigned int *futex_word, unsigned int exp
 - syscall number存储到了x8寄存器
 - 最后svc 0 触发进入内核态
 
+## pthread_mutex_unlock
+
+```C
+// glibc-2.34/nptl/pthread_mutex_unlock.c
+int
+___pthread_mutex_unlock (pthread_mutex_t *mutex)
+{
+  return __pthread_mutex_unlock_usercnt (mutex, 1);
+}
+
+
+int
+__pthread_mutex_unlock_usercnt (pthread_mutex_t *mutex, int decr)
+{
+  /* See concurrency notes regarding mutex type which is loaded from __kind
+     in struct __pthread_mutex_s in sysdeps/nptl/bits/thread-shared-types.h.  */
+  int type = PTHREAD_MUTEX_TYPE_ELISION (mutex);
+
+  ...
+  if (__builtin_expect (type, PTHREAD_MUTEX_TIMED_NP)
+      == PTHREAD_MUTEX_TIMED_NP)
+    {
+      /* Always reset the owner field.  */
+    normal:
+      mutex->__data.__owner = 0; // 解锁将 __owner 设置为 0
+      if (decr) // 持有者数量减一
+	      /* One less user.  */
+	      --mutex->__data.__nusers;
+
+      /* Unlock.  */
+      lll_mutex_unlock_optimized (mutex);
+
+      LIBC_PROBE (mutex_release, 1, mutex);
+
+      return 0;
+    }
+  ....
+}
+
+/* lll_lock with single-thread optimization.  */
+static inline void
+lll_mutex_unlock_optimized (pthread_mutex_t *mutex)
+{
+  /* The single-threaded optimization is only valid for private
+     mutexes.  For process-shared mutexes, the mutex could be in a
+     shared mapping, so synchronization with another process is needed
+     even without any threads.  */
+  int private = PTHREAD_MUTEX_PSHARED (mutex);
+  if (private == LLL_PRIVATE && SINGLE_THREAD_P)
+    mutex->__data.__lock = 0;
+  else
+    lll_unlock (mutex->__data.__lock, private);
+}
+
+```
+
+```C
+// glibc-2.34/sysdeps/nptl/lowlevellock.h
+#define lll_unlock(futex, private)	\
+  __lll_unlock (&(futex), private)
+
+
+/* This is an expression rather than a statement even though its value is
+   void, so that it can be used in a comma expression or as an expression
+   that's cast to void.  */
+/* Unconditionally set FUTEX to 0 (not acquired), releasing the lock.  If FUTEX
+   was >1 (acquired, possibly with waiters), then wake any waiters.  The waiter
+   that acquires the lock will set FUTEX to >1.
+   Evaluate PRIVATE before releasing the lock so that we do not violate the
+   mutex destruction requirements.  Specifically, we need to ensure that
+   another thread can destroy the mutex (and reuse its memory) once it
+   acquires the lock and when there will be no further lock acquisitions;
+   thus, we must not access the lock after releasing it, or those accesses
+   could be concurrent with mutex destruction or reuse of the memory.  */
+#define __lll_unlock(futex, private)					\
+  ((void)								\
+  ({									\
+     int *__futex = (futex);						\
+     int __private = (private);						\
+     int __oldval = atomic_exchange_rel (__futex, 0);			\
+     if (__glibc_unlikely (__oldval > 1))				\
+       {								\
+         if (__builtin_constant_p (private) && (private) == LLL_PRIVATE) \
+           __lll_lock_wake_private (__futex);                           \
+         else                                                           \
+           __lll_lock_wake (__futex, __private);			\
+       }								\
+   }))
+
+void
+__lll_lock_wake (int *futex, int private)
+{
+  lll_futex_wake (futex, 1, private);
+}
+
+// glibc-2.34/sysdeps/nptl/lowlevellock-futex.h
+/* Wake up up to NR waiters on FUTEXP.  */
+# define lll_futex_wake(futexp, nr, private)                             \
+  lll_futex_syscall (4, futexp,                                         \
+		     __lll_private_flag (FUTEX_WAKE, private), nr, 0)
+
+```
+到 `lll_futex_syscall` 时，unlock 和 lock 就是一样的函数了。对比一下 lock 和 unlock 对 `lll_futex_syscall` 调用参数的差别：
+
+```C
+// lock
+lll_futex_syscall (
+  4,                                         // futex 调用的参数数量
+  futexp,                                    // __lock 的指针
+	__lll_private_flag (FUTEX_WAIT, private),  // futex 之后会转换为中断 号
+	val,                                       // 2 __lock 的期望值，不满足并不会休眠，而是立即返回继续该线程。
+  timeout                                    // 0 延时
+)
+// unlock
+lll_futex_syscall (
+  4,
+  futexp,
+	__lll_private_flag (FUTEX_WAKE, private),
+  nr,                                        // 1 唤醒的线程数量
+  0                                          // 延时
+)
+```
 
 ## TODO 内核调用流程
 
+ARM 宏定义使用 `.macro` 开始，`.endm` 结束。
 
+```ARM
+	.macro kernel_ventry, el:req, ht:req, regsize:req, label:req
+	.align 7
+#ifdef CONFIG_UNMAP_KERNEL_AT_EL0
+	.if	\el == 0
+alternative_if ARM64_UNMAP_KERNEL_AT_EL0
+	.if	\regsize == 64
+	mrs	x30, tpidrro_el0
+	msr	tpidrro_el0, xzr
+	.else
+	mov	x30, xzr
+	.endif
+alternative_else_nop_endif
+	.endif
+#endif
+
+	sub	sp, sp, #PT_REGS_SIZE
+#ifdef CONFIG_VMAP_STACK
+	/*
+	 * Test whether the SP has overflowed, without corrupting a GPR.
+	 * Task and IRQ stacks are aligned so that SP & (1 << THREAD_SHIFT)
+	 * should always be zero.
+	 */
+	add	sp, sp, x0			// sp' = sp + x0
+	sub	x0, sp, x0			// x0' = sp' - x0 = (sp + x0) - x0 = sp
+	tbnz	x0, #THREAD_SHIFT, 0f
+	sub	x0, sp, x0			// x0'' = sp' - x0' = (sp + x0) - sp = x0
+	sub	sp, sp, x0			// sp'' = sp' - x0 = (sp + x0) - x0 = sp
+	b	el\el\ht\()_\regsize\()_\label
+
+0:
+	/*
+	 * Either we've just detected an overflow, or we've taken an exception
+	 * while on the overflow stack. Either way, we won't return to
+	 * userspace, and can clobber EL0 registers to free up GPRs.
+	 */
+
+	/* Stash the original SP (minus PT_REGS_SIZE) in tpidr_el0. */
+	msr	tpidr_el0, x0
+
+	/* Recover the original x0 value and stash it in tpidrro_el0 */
+	sub	x0, sp, x0
+	msr	tpidrro_el0, x0
+
+	/* Switch to the overflow stack */
+	adr_this_cpu sp, overflow_stack + OVERFLOW_STACK_SIZE, x0
+
+	/*
+	 * Check whether we were already on the overflow stack. This may happen
+	 * after panic() re-enables interrupts.
+	 */
+	mrs	x0, tpidr_el0			// sp of interrupted context
+	sub	x0, sp, x0			// delta with top of overflow stack
+	tst	x0, #~(OVERFLOW_STACK_SIZE - 1)	// within range?
+	b.ne	__bad_stack			// no? -> bad stack pointer
+
+	/* We were already on the overflow stack. Restore sp/x0 and carry on. */
+	sub	sp, sp, x0
+	mrs	x0, tpidrro_el0
+#endif
+	b	el\el\ht\()_\regsize\()_\label
+	.endm
+
+```
+
+```
+el\el\ht\()_\regsize\()_\label
+kernel_ventry	1, t, 64, sync
+
+el1t_64_sync
+
+```
+
+
+## 总结
+
+NPTL 锁并获取锁已经尽力避免了系统调用引起的消耗，在不竞争的情况下，其消耗和无锁性能是一样的，被精妙地设计为低竞争。为了减少系统调用引起的性能消耗，优化的方向是减少临界区的大小。比如对 Hash 表的访问，常用的减少临界区大小的方式比如哈希表分桶、对于非共享的数据使用TLS(Thread Local Storage)数据结构等等。**因此，对于互斥锁的使用优化就是尽量减少临界区的大小。对于单个简单数据类型的竞争（线程数量少时）可以使用 Atomic 类型的操作**
 
 
 ## 评估时间
@@ -638,3 +891,11 @@ https://blog.csdn.net/arm7star/article/details/77108301
 
 
 但是spinlock的应用场景有限，对于大的临界区，忙等待则是件很恐怖的事情，特别是当同步机制运用于等待某一事件时（比如服务器工作线程等待客户端发起请求）。所以很多情况下进程挂起等待是很有必要的。
+
+
+3. 所有锁都要基于 CAS 实现吗？
+https://www.zhihu.com/question/276921045
+
+4. Linux 对线程的调度算法是怎样的？
+
+https://www.zhihu.com/question/283318421/answer/431242454

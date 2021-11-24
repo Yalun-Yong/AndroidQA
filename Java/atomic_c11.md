@@ -56,13 +56,15 @@ C11标准是规定了五种可用以原子对象的算术逻辑操作，加、�
 
 ## 实现
 
+C11 只一个标准，各个平台和编译器器实现的具体代码不同，但最终是有编译器和硬件来支持的。以 GCC 为例 `atomic_compare_exchange_strong` 定义为 [atomic_compare_exchange_strong](https://github.com/gcc-mirror/gcc/blob/master/gcc/ginclude/stdatomic.h)，并最终调用了 gcc 内置函数 [`__atomic_compare_exchange`]()
+
 原子操作是无锁操作，需要硬件在底层做支持，也就是 `CAS` 或者 `TAS` 原语。各个处理器上支持的原子操作的种类和形式各不相同。在现代 x86 处理骑上，基本算数运算、逻辑运算指令前添加 `LOCK` (80486)即可使用使用原子操作。比如x86处理器以及[ARMv8.1架构等处理器直接提供了CAS指令作为原子条件原语](https://blog.csdn.net/Roland_Sun/article/details/107552574)。而ARMv7、ARMv8处理器则使用了另一种LL-SC，这两种原子条件原语都可以作为Lock-free算法工具。
 
 比 CAS 与 LL_SC 更早一些一些的原子条件有 SWAP(8086, ARMv5), Bit test adn set(80386. Blackfin SDP561) 等，这些同步原语只能用于 `同步锁`，而无法作为 `lock-free` 的原子对象进行操作。另外，CAS 与 LL-SC 条件原语都能实现 SWAP 和 Bit test and set 指令的功能。
 
 - 使用处理器提供的指令级别的原子条件原语，可用来对原子对象过更更夫的修改操作，比如浮点数的原子计算。C11 标准中提供了 CAS 形式的条件原语。
 
-在C11标准当中，就只提供的CAS这种，宏函数接口名为atomic_compare_exchange_strong以及atomic_compare_exchange_weak，第一种是保证数据比较交换是成功还是失败，结果马上就会出来，而这个weak往往针对通过LL-SC指令模拟CAS，里面会产生一些副作用，我做一次比较和交换的时候，我这个结果确实已经交换成功了，但是返回结果可能是失败的，当然我们也可通过一次循环再一次迭代，然后直到它成功返回为止。
+在C11标准当中，就只提供的CAS这种，宏函数接口名为 atomic_compare_exchange_strong 以及atomic_compare_exchange_weak，第一种是保证数据比较交换是成功还是失败，结果马上就会出来，而这个weak往往针对通过LL-SC指令模拟CAS，里面会产生一些副作用，我做一次比较和交换的时候，我这个结果确实已经交换成功了，但是返回结果可能是失败的，当然我们也可通过一次循环再一次迭代，然后直到它成功返回为止。
 
 
 那么我们再介绍宏函数的时候，我以strong为例，函数原形是这个样子，返回bool类形，这个函数的语义就是我先比较object的原子对象指针所指的原子对象，与expected所指的内容对象是否相同，如果这两个指针所指的内容相同，我将desired的值存储到object，并且最终返回，我这次修改操作是成功的。否则，也就是expected和object两个内容不相同，这个时候会将object所指的值复制到expected，并且返回true为，我们使用接口的时候我们的操作步序往往是先将atomic原子对象指针的值先拿出来，放到一个普通的变量当中去，我们再去写我object原子对象值的时候我们要用desired，写进去的时候，我先比较expercted为和object是否相同，如果相同就说明我在做原子，从加载到做的过程当中外部没有干扰，也就是我没有存在另外一个线程也使用原子操作，对我当前的object对象进行修改，这个时候两个内容是完全相同的，这个时候显示成功。如果我先用desired对oject的值进行修改的时，这个值被其他线程修改了，也就是我在做atomic_load与atomic_compare_exchange_strong之间有一个缝隙，正好被另外一个线程抓住把柄，它在当前线程执行atomic_compare_exchange_strong前先修改了object的值，这样就会出现两个值不同，这个时候就会返回false。
