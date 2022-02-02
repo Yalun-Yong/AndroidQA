@@ -58,11 +58,11 @@ synchronized 早期重量级，向系统申请。
 
 ## Thread Executor, HandlerThread, AsyncTask 怎么选
 
-如果想要执行后台任务，不与前台交互，可以使用, Thread　或者　Executor，而且推荐使用　Executor 线程池。
+如果想要执行后台任务，不与前台交互，可以使用, Thread 或者 Executor，而且推荐使用 Executor 线程池。
 
-如果与前台频繁交互，例如下载进度条等则可以使用 AsyncTask，而　HandlerThread 基本没有什么使用场景。如果一次性交互，可以使用 Handler 或者其他切换线程的库。
+如果与前台频繁交互，例如下载进度条等则可以使用 AsyncTask，而 HandlerThread 基本没有什么使用场景。如果一次性交互，可以使用 Handler 或者其他切换线程的库。
 
-Service 和　IntentService（带有单线程的后台一次性 Service，执行完后就自动退出了）。Servide 主要处理长时间的任务，除非用户为其他应用提供服务或者播放器等用户服务。否则都不建议使用，而是使用 DownloadManager 或者 TaskManager 代替。
+Service 和 IntentService（带有单线程的后台一次性 Service，执行完后就自动退出了）。Servide 主要处理长时间的任务，除非用户为其他应用提供服务或者播放器等用户服务。否则都不建议使用，而是使用 DownloadManager 或者 TaskManager 代替。
 
 
 ## 实现 Rannable 接口的好处
@@ -73,11 +73,11 @@ Service 和　IntentService（带有单线程的后台一次性 Service，执行
 
 ## 几种创建 Thread 的方法
 
-1. 继承 Thread 类，重写　run 方法。
-2. 实现 Runnable 接口。传递给　Thread 对象。同时覆盖和传递 runnable 将执行 Thread 自身覆盖的 `run` 方法。
+1. 继承 Thread 类，重写 run 方法。
+2. 实现 Runnable 接口。传递给 Thread 对象。同时覆盖和传递 runnable 将执行 Thread 自身覆盖的 `run` 方法。
 3. ThreadFactory，其实内部还是自己 New Thread。只不过可以用与生产一批类似的线程。
 4. Excturor 线程池，不用时及时关闭 shutdown。
-    1. 单线程的线程池　singleThreadExecutor()。可以指定执行的顺序（FIFO,LIFO）/
+    1. 单线程的线程池 singleThreadExecutor()。可以指定执行的顺序（FIFO,LIFO）/
     2. 固定数量线程池 fixedThreadExecutor()
     3. 可以动态增长的线程池 newCachePoolExecutor() 不限制数量
     4. newScheduledThreadPool 支持定时及周期执行任务。
@@ -104,7 +104,7 @@ Service 和　IntentService（带有单线程的后台一次性 Service，执行
 
 ```
 BLOCKED：Thread state for a thread blocked waiting for a monitor lock.
-A thread in the blocked state is waiting for a monitor lock　to enter a synchronized block/method or　reenter a synchronized block/method after calling　｀Object.wait｀
+A thread in the blocked state is waiting for a monitor lock to enter a synchronized block/method or reenter a synchronized block/method after calling ｀Object.wait｀
 ```
 
 ## 线程的状态图
@@ -116,7 +116,7 @@ A thread in the blocked state is waiting for a monitor lock　to enter a synchro
 ## interrupt 和 stop 的区别，为什么 stop 被废弃。
 
 - interrupt 是在线程中设置了一个标志位，需要在 `run` 方法中自己判断标志位来终止。`Thread.isInterrupe()` 会在返回之后，把标志位置为 true，这样方便下次再次执行；而 `isInterrupt()` 不会设置标志位。
-- stop　方法类似将线程　kill 掉，结果不可预期。释放它已经锁定的所有监视器。可能产生数据的不一致性。已经被废弃。
+- stop 方法类似将线程 kill 掉，结果不可预期。释放它已经锁定的所有监视器。可能产生数据的不一致性。已经被废弃。
 
 - 正在 `sleep` 的线程，被执行 `interrupt()` 将会终止休眠，同时抛出 `InterruptedException`，此时捕获异常可以做一些善后工作。
 - Android 中有个 `SystenClock.sleep()` 不会抛出 ｀InterruptedException`，同时也不会被打断休眠状态，可以用于特殊情况。
@@ -169,10 +169,10 @@ MIN_PRIORITY = 1
 
 
 
-## wait 和　sleep　的区别
+## wait 和 sleep 的区别
 
 1. wait 可以指定时间，也可以不同指定。
-2. 在同步中时，对　cup 的执行权的实例方式不同。wait 释放执行权，释放锁。sleep 释放执行权，但不释放锁。
+2. 在同步中时，对 cup 的执行权的实例方式不同。wait 释放执行权，释放锁。sleep 释放执行权，但不释放锁。
 
 
 ## 加锁的类型
@@ -228,11 +228,11 @@ Lock lock = new ReetrantLock(); 可重入的互斥锁。
 
 Lock.unLock() 要放在 `finally` 块中。
 
-Condation 将 Object 监视方法（wait(),notify,notifyAll) 分解为截然不同的对象，以便将这些对象与任意 lock 实现组合，为每个对象提供多个等待的　set, 其中 Lock 代替了原有 synchronized 关键字的使用。condation　代替了 Ojeect 监视器方法的使用。
+Condation 将 Object 监视方法（wait(),notify,notifyAll) 分解为截然不同的对象，以便将这些对象与任意 lock 实现组合，为每个对象提供多个等待的 set, 其中 Lock 代替了原有 synchronized 关键字的使用。condation 代替了 Ojeect 监视器方法的使用。
 
 方法名的改变
 
-wait　－> await
+wait －> await
 notify  －> signal
 notifyAll －> signalAll
 
@@ -245,7 +245,7 @@ notifyAll －> signalAll
 
 ## 单例模式的问题
 
-单例的变量要使用 volatile 声明变量，保证基本数据类型的操作是线程同步的。例如虚拟机上 double 的赋值可能会被分成两步。防止变量还没初始化完成就返回引用供其他程序访问而出现　null 的情况。
+单例的变量要使用 volatile 声明变量，保证基本数据类型的操作是线程同步的。例如虚拟机上 double 的赋值可能会被分成两步。防止变量还没初始化完成就返回引用供其他程序访问而出现 null 的情况。
 
 volatile 不能保证对象，++,-- 等操作的线程安全。
 
@@ -397,10 +397,21 @@ Kotlin 协程由于要和 Java 互操作和运行在 Jvm 之上，其本质上�
 3. Dispatchers.Default 适用于 CPU 密集型操作
 5. Dispatchers.Main  安卓库独有
 
+> 协称实现为什么也需要栈?
+
+直观感觉上，单线程的协称只是从程序的一个点 jump 到另一个点执行，是可以使用同一个栈的。然而每个协称却需要单独的栈，这是为什么呢？
+
+几乎所有的编程语言都是以函数（方法）组织代码片段的，而函数的调用是以栈作为保存局部变量的，栈成为程序流程必不可少的上下文。假如一个线程中有两个协称：
+
+协程 1：funA ---> 挂起 ---> funB
+协程 2：funX ---> funY ---> 挂起
+
+协称 1 执行时，funA 先入栈。当协称 1 调用`挂起函数`时，调度将执行协称 2，此时 funX、funY 入栈。协称2 挂起返回协称 1 执行时，如果两个协称公用相同的栈，funB 入栈时，将覆盖 funX、funY 的局部变量。从而再次切换回协程 2 执行时，因为 funX、FunY 的栈被覆盖，函数出栈将出错。
+
+这里有篇文章将协称分为[有栈、无栈协程](https://blog.csdn.net/weixin_39875941/article/details/110592519)。我看不过是栈是由系统在栈区分配，还是由用户在堆分配空间作为栈使用的区别。因为**函数调用的入栈规则不改变，就不可能没有栈。**
 
 
-
-## Atomic 类
+# Atomic 类
 
 https://www.jianshu.com/p/84c75074fa03
 

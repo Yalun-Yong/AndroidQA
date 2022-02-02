@@ -753,9 +753,42 @@ lll_futex_syscall (
 )
 ```
 
-## TODO 内核调用流程
+## 内核调用流程
 
-ARM 宏定义使用 `.macro` 开始，`.endm` 结束。
+### 中断向量表
+
+一个系统调用以一个软中断的形式发生， 中断是和硬件相关的，不同芯片实现方式不同，因此在各个架构目录下有各自的实现。以 ARM64 为例，其在 `arch/arm64/kernel/entry.S` 目录下：
+
+
+```ASM
+SYM_CODE_START(vectors)
+	kernel_ventry	1, t, 64, sync		// Synchronous EL1t
+	kernel_ventry	1, t, 64, irq		// IRQ EL1t
+	kernel_ventry	1, t, 64, fiq		// FIQ EL1h
+	kernel_ventry	1, t, 64, error		// Error EL1t
+
+	kernel_ventry	1, h, 64, sync		// Synchronous EL1h
+	kernel_ventry	1, h, 64, irq		// IRQ EL1h
+	kernel_ventry	1, h, 64, fiq		// FIQ EL1h
+	kernel_ventry	1, h, 64, error		// Error EL1h
+
+	kernel_ventry	0, t, 64, sync		// Synchronous 64-bit EL0
+	kernel_ventry	0, t, 64, irq		// IRQ 64-bit EL0
+	kernel_ventry	0, t, 64, fiq		// FIQ 64-bit EL0
+	kernel_ventry	0, t, 64, error		// Error 64-bit EL0
+
+	kernel_ventry	0, t, 32, sync		// Synchronous 32-bit EL0
+	kernel_ventry	0, t, 32, irq		// IRQ 32-bit EL0
+	kernel_ventry	0, t, 32, fiq		// FIQ 32-bit EL0
+	kernel_ventry	0, t, 32, error		// Error 32-bit EL0
+SYM_CODE_END(vectors)
+```
+
+具体含义查看
+https://blog.csdn.net/liuhangtiant/article/details/90399374,
+https://zhuanlan.zhihu.com/p/356968735
+
+`kernel_ventry` 是一个宏，ARM 宏定义使用 `.macro` 开始，`.endm` 结束。
 
 ```ARM
 	.macro kernel_ventry, el:req, ht:req, regsize:req, label:req
@@ -821,14 +854,60 @@ alternative_else_nop_endif
 	.endm
 
 ```
+- `\()` 表示拼接前后的字符串
+- `\el` 表示取 el 的值
+- `\ht` 表示取 ht 的值
 
 ```
 el\el\ht\()_\regsize\()_\label
 kernel_ventry	1, t, 64, sync
+.macro kernel_ventry, el:req, ht:req, regsize:req, label:req
 
 el1t_64_sync
 
 ```
+
+对应的处理程序
+
+```ASM
+	.macro entry_handler el:req, ht:req, regsize:req, label:req
+SYM_CODE_START_LOCAL(el\el\ht\()_\regsize\()_\label)
+	kernel_entry \el, \regsize
+	mov	x0, sp
+	bl	el\el\ht\()_\regsize\()_\label\()_handler
+	.if \el == 0
+	b	ret_to_user
+	.else
+	b	ret_to_kernel
+	.endif
+SYM_CODE_END(el\el\ht\()_\regsize\()_\label)
+	.endm
+
+/*
+ * Early exception handlers
+ */
+	entry_handler	1, t, 64, sync
+	entry_handler	1, t, 64, irq
+	entry_handler	1, t, 64, fiq
+	entry_handler	1, t, 64, error
+
+	entry_handler	1, h, 64, sync
+	entry_handler	1, h, 64, irq
+	entry_handler	1, h, 64, fiq
+	entry_handler	1, h, 64, error
+
+	entry_handler	0, t, 64, sync
+	entry_handler	0, t, 64, irq
+	entry_handler	0, t, 64, fiq
+	entry_handler	0, t, 64, error
+
+	entry_handler	0, t, 32, sync
+	entry_handler	0, t, 32, irq
+	entry_handler	0, t, 32, fiq
+	entry_handler	0, t, 32, error
+```
+
+
 
 
 ## 总结
